@@ -76,6 +76,7 @@ export default function App() {
   const roleRef = useRef('player1');
   const playerNameRef = useRef(playerName);
   const playerIdRef = useRef(playerId);
+  const opponentRef = useRef(opponent);
 
   useEffect(() => {
     roleRef.current = role;
@@ -84,6 +85,10 @@ export default function App() {
   useEffect(() => {
     playerNameRef.current = playerName;
   }, [playerName]);
+
+  useEffect(() => {
+    opponentRef.current = opponent;
+  }, [opponent]);
 
   // 1. Initialize 3D SceneManager
   useEffect(() => {
@@ -199,12 +204,18 @@ export default function App() {
 
     // Match ended
     s.on('match_ended', (data) => {
-      const isWinner = data.winnerRole === roleRef.current;
-      const stats = roleRef.current === 'player1' ? data.p1Stats : data.p2Stats;
+      const isP1 = roleRef.current === 'player1';
+      const isWinner =
+        data.winnerRole === roleRef.current ||
+        data.winnerRoleShort === (isP1 ? 'p1' : 'p2') ||
+        (isP1 && (data.winnerRole === 'p1' || data.winnerRole === 'player1')) ||
+        (!isP1 && (data.winnerRole === 'p2' || data.winnerRole === 'player2'));
+
+      const stats = isP1 ? data.p1Stats : data.p2Stats;
 
       setMatchResult({
         isWinner,
-        winnerName: data.winnerName,
+        winnerName: isWinner ? (playerNameRef.current || 'Kamu') : (data.winnerName || opponentRef.current?.name || 'Lawan'),
         reason: data.reason,
         stats,
         duration: data.duration,
@@ -291,6 +302,7 @@ export default function App() {
     handleUserActivity();
     setMatchType('bot');
     setRole('player1');
+    roleRef.current = 'player1';
     setScreenState('countdown');
     setTilt(0);
     setPlayerScore(0);
@@ -314,10 +326,13 @@ export default function App() {
         soundManager.playArmStrain();
       },
       onMatchEnded: (data) => {
-        const isWinner = data.winnerRole === 'p1';
+        const isWinner =
+          data.winnerRole === 'player1' ||
+          data.winnerRole === 'p1' ||
+          data.winnerRoleShort === 'p1';
         setMatchResult({
           isWinner,
-          winnerName: isWinner ? playerName : data.winnerName,
+          winnerName: isWinner ? (playerNameRef.current || playerName) : (data.winnerName || bot.botProfile.name),
           reason: data.reason,
           stats: data.p1Stats,
           duration: data.duration,

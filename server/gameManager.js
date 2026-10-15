@@ -387,9 +387,9 @@ export class GameManager {
 
     // Check Win/Loss conditions
     if (gs.tilt >= 1.0) {
-      this.endMatch(gs, 'p1', 'pin');
+      this.endMatch(gs, 'player1', 'pin');
     } else if (gs.tilt <= -1.0) {
-      this.endMatch(gs, 'p2', 'pin');
+      this.endMatch(gs, 'player2', 'pin');
     }
   }
 
@@ -430,10 +430,15 @@ export class GameManager {
     const p1 = targetRoom.players[0];
     const p2 = targetRoom.players[1];
 
+    const isP1Winner = winnerRole === 'p1' || winnerRole === 'player1';
+    const normalizedWinnerRole = isP1Winner ? 'player1' : 'player2';
+    const normalizedRoleShort = isP1Winner ? 'p1' : 'p2';
+
     const matchResult = {
-      winnerRole,
-      winnerName: winnerRole === 'p1' ? p1.playerName : p2.playerName,
-      winnerId: winnerRole === 'p1' ? p1.playerId : p2.playerId,
+      winnerRole: normalizedWinnerRole,
+      winnerRoleShort: normalizedRoleShort,
+      winnerName: isP1Winner ? p1.playerName : p2.playerName,
+      winnerId: isP1Winner ? p1.playerId : p2.playerId,
       reason,
       p1Stats: gs.p1Stats,
       p2Stats: gs.p2Stats,
@@ -482,7 +487,7 @@ export class GameManager {
 
       if (remainingPlayer && !room.gameState?.isFinished) {
         const isRemainingP1 = room.players[0].socketId === remainingPlayer.socketId;
-        this.endMatch(room, isRemainingP1 ? 'p1' : 'p2', 'forfeit');
+        this.endMatch(room, isRemainingP1 ? 'player1' : 'player2', 'forfeit');
         this.io.to(remainingPlayer.socketId).emit('opponent_left', {
           message: `${disconnectedPlayer?.playerName || 'Lawan'} telah keluar dari pertandingan.`,
         });

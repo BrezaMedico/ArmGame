@@ -235,9 +235,12 @@ export class BotEngine {
     if (this.botActionTimeout) clearTimeout(this.botActionTimeout);
     if (this.roundTimeout) clearTimeout(this.roundTimeout);
 
+    const isP1 = winner === 'p1' || winner === 'player1';
+
     this.onMatchEnded({
-      winnerRole: winner,
-      winnerName: winner === 'p1' ? 'Kamu' : this.botProfile.name,
+      winnerRole: isP1 ? 'player1' : 'bot',
+      winnerRoleShort: isP1 ? 'p1' : 'bot',
+      winnerName: isP1 ? 'Kamu' : this.botProfile.name,
       reason,
       p1Stats: this.p1Stats,
       botStats: this.botStats,

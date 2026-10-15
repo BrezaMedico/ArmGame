@@ -13,9 +13,16 @@ export function HUD({
   onToggleMute,
   onForfeit,
 }) {
-  // Normalize tilt (-1 to 1) to percentage for the tug-of-war meter: 0% (opp win) to 100% (player win)
-  // tilt = 0 -> 50%
-  const pinPercent = Math.max(0, Math.min(100, (tilt + 1) * 50));
+  // Clamped tilt (-1.0 to 1.0; positive: player winning)
+  const clampedTilt = Math.max(-1.0, Math.min(1.0, tilt || 0));
+
+  // In 3D FPP perspective (right-hand arm wrestling):
+  // When Player wins (tilt > 0): arms push towards the left pad (-X), indicator moves left towards 0% ("PIN LAWAN")
+  // When Opponent wins (tilt < 0): arms push towards the right pad (+X), indicator moves right towards 100% ("PIN KAMU")
+  // Center is neutral 50% ("SEIMBANG")
+  const indicatorPos = Math.max(0, Math.min(100, 50 - clampedTilt * 50));
+  const isWinning = clampedTilt > 0;
+  const isLosing = clampedTilt < 0;
 
   return (
     <div style={{
@@ -87,20 +94,20 @@ export function HUD({
             marginBottom: 6,
             textTransform: 'uppercase',
           }}>
-            <span style={{ color: '#60a5fa' }}>PIN LAWAN</span>
+            <span style={{ color: isWinning ? '#4ade80' : '#22c55e', transition: 'color 0.2s' }}>PIN LAWAN</span>
             <span style={{ color: '#94a3b8' }}>SEIMBANG</span>
-            <span style={{ color: '#f87171' }}>PIN KAMU</span>
+            <span style={{ color: isLosing ? '#f87171' : '#ef4444', transition: 'color 0.2s' }}>PIN KAMU</span>
           </div>
 
           {/* Bar track */}
           <div style={{
             width: '100%',
             height: 14,
-            background: 'rgba(0, 0, 0, 0.45)',
+            background: 'rgba(0, 0, 0, 0.55)',
             borderRadius: 7,
             position: 'relative',
             overflow: 'hidden',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
           }}>
             {/* Center mark */}
             <div style={{
@@ -109,7 +116,8 @@ export function HUD({
               top: 0,
               bottom: 0,
               width: 2,
-              background: 'rgba(255, 255, 255, 0.4)',
+              marginLeft: -1,
+              background: 'rgba(255, 255, 255, 0.45)',
               zIndex: 3,
             }} />
 
@@ -119,42 +127,48 @@ export function HUD({
                 position: 'absolute',
                 top: 0,
                 bottom: 0,
-                left: `${100 - pinPercent}%`,
+                left: `${indicatorPos}%`,
                 width: 14,
                 marginLeft: -7,
                 background: '#f59e0b',
                 borderRadius: 7,
-                boxShadow: '0 0 10px #f59e0b',
+                boxShadow: '0 0 12px #f59e0b, 0 0 4px #ffffff',
                 transition: 'left 0.15s ease-out',
                 zIndex: 4,
               }}
             />
 
-            {/* Left side momentum (Player pushing opponent) */}
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: `${Math.max(0, (1 - (tilt + 1) / 2) * 100)}%`,
-                background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
-                transition: 'width 0.15s ease-out',
-              }}
-            />
+            {/* Left side momentum (Player pushing opponent towards PIN LAWAN) */}
+            {isWinning && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${indicatorPos}%`,
+                  top: 0,
+                  bottom: 0,
+                  width: `${50 - indicatorPos}%`,
+                  background: 'linear-gradient(270deg, #10b981, #22c55e)',
+                  transition: 'left 0.15s ease-out, width 0.15s ease-out',
+                  zIndex: 2,
+                }}
+              />
+            )}
 
-            {/* Right side momentum (Opponent pushing player) */}
-            <div
-              style={{
-                position: 'absolute',
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: `${Math.max(0, ((tilt + 1) / 2) * 100)}%`,
-                background: 'linear-gradient(270deg, #ef4444, #f87171)',
-                transition: 'width 0.15s ease-out',
-              }}
-            />
+            {/* Right side momentum (Opponent pushing player towards PIN KAMU) */}
+            {isLosing && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: 0,
+                  bottom: 0,
+                  width: `${indicatorPos - 50}%`,
+                  background: 'linear-gradient(90deg, #f87171, #ef4444)',
+                  transition: 'width 0.15s ease-out',
+                  zIndex: 2,
+                }}
+              />
+            )}
           </div>
         </div>
 
