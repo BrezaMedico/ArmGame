@@ -2,6 +2,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { soundManager } from '../audio/SoundManager';
 
+const TARGET_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
+
 export function TimingNeedle({
   roundData,
   onInputSubmit,
@@ -9,60 +11,76 @@ export function TimingNeedle({
   streak = 0,
 }) {
   const [needleAngle, setNeedleAngle] = useState(0);
-  const [feedback, setFeedback] = useState(null); // { type: 'perfect' | 'hit' | 'miss', text: string }
-  const [hasActed, setHasActed] = useState(false);
+  const [feedback, setFeedback] = useState(null);
+
+  // Responsive target & direction state that flips INSTANTLY on keypress
+  const [isClockwise, setIsClockwise] = useState(roundData?.clockwise ?? true);
+  const [currentTargetAngle, setCurrentTargetAngle] = useState(roundData?.targetAngle ?? 180);
+  const [currentTargetSize, setCurrentTargetSize] = useState(roundData?.targetSize ?? 46);
+  const [currentTargetColor, setCurrentTargetColor] = useState(roundData?.targetColor ?? '#22c55e');
 
   const animRef = useRef(null);
   const angleRef = useRef(0);
   const lastTimeRef = useRef(performance.now());
+  const directionRef = useRef(roundData?.clockwise ? 1 : -1);
+  const lastActionTimeRef = useRef(0);
+  const colorIndexRef = useRef(0);
 
-  // Reset when roundData changes
+  // Sync when roundData arrives from server/bot without disrupting continuous rotation
   useEffect(() => {
     if (!roundData) return;
-    setHasActed(false);
-    setFeedback(null);
-    lastTimeRef.current = performance.now();
-
-    // Start angle is opposite the target to allow good reaction time
-    const startAngle = (roundData.targetAngle + 180) % 360;
-    angleRef.current = startAngle;
-    setNeedleAngle(startAngle);
+    if (roundData.targetAngle !== undefined) {
+      setCurrentTargetAngle(roundData.targetAngle);
+    }
+    if (roundData.targetSize !== undefined) {
+      setCurrentTargetSize(roundData.targetSize);
+    }
+    if (roundData.targetColor) {
+      setCurrentTargetColor(roundData.targetColor);
+    }
+    if (roundData.clockwise !== undefined) {
+      setIsClockwise(roundData.clockwise);
+      directionRef.current = roundData.clockwise ? 1 : -1;
+    }
   }, [roundData?.roundNumber]);
 
-  // Animation Loop for Needle Rotation
+  // Continuous smooth animation loop
   useEffect(() => {
-    if (!roundData || disabled) return;
+    if (disabled) return;
 
     const animate = (currentTime) => {
       const dt = (currentTime - lastTimeRef.current) / 1000;
       lastTimeRef.current = currentTime;
 
-      const speed = roundData.needleSpeed || 260; // degrees per second
-      const direction = roundData.clockwise ? 1 : -1;
-
-      angleRef.current = (angleRef.current + direction * speed * dt) % 360;
+      const speed = roundData?.needleSpeed || 280; // degrees per second
+      angleRef.current = (angleRef.current + directionRef.current * speed * dt) % 360;
       if (angleRef.current < 0) angleRef.current += 360;
 
       setNeedleAngle(angleRef.current);
       animRef.current = requestAnimationFrame(animate);
     };
 
+    lastTimeRef.current = performance.now();
     animRef.current = requestAnimationFrame(animate);
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [roundData, disabled]);
+  }, [disabled, roundData?.needleSpeed]);
 
-  // Action trigger
+  // Action trigger: INSTANT direction flip & INSTANT target relocation
   const handleAction = useCallback(() => {
-    if (disabled || hasActed || !roundData) return;
-    setHasActed(true);
+    if (disabled) return;
+
+    const now = performance.now();
+    // 140ms debounce to prevent key-repeat spam while keeping input ultra-responsive
+    if (now - lastActionTimeRef.current < 140) return;
+    lastActionTimeRef.current = now;
 
     const current = angleRef.current;
-    const target = roundData.targetAngle;
-    const halfSize = roundData.targetSize / 2;
+    const target = currentTargetAngle;
+    const halfSize = currentTargetSize / 2;
 
-    // Angular distance calculation (accounting for 360 degree wrap)
+    // Angular distance accounting for 360 wrap
     let diff = Math.abs(current - target);
     if (diff > 180) diff = 360 - diff;
 
@@ -74,10 +92,11 @@ export function TimingNeedle({
       setFeedback({
         type: isPerfect ? 'perfect' : 'hit',
         text: isPerfect ? 'PERFECT! +1' : 'GOOD! +1',
+        id: now,
       });
       soundManager.playHitSuccess(isPerfect);
       onInputSubmit({
-        roundNumber: roundData.roundNumber,
+        roundNumber: roundData?.roundNumber || 1,
         hit: true,
         accuracy,
       });
@@ -85,15 +104,29 @@ export function TimingNeedle({
       setFeedback({
         type: 'miss',
         text: 'MISS! -1',
+        id: now,
       });
       soundManager.playHitMiss();
       onInputSubmit({
-        roundNumber: roundData.roundNumber,
+        roundNumber: roundData?.roundNumber || 1,
         hit: false,
         accuracy: 0,
       });
     }
-  }, [disabled, hasActed, roundData, onInputSubmit]);
+
+    // --- INSTANT DIRECTION REVERSAL ---
+    directionRef.current = -directionRef.current;
+    setIsClockwise(directionRef.current > 0);
+
+    // --- INSTANT NEW RANDOM TARGET ANGLE & COLOR ---
+    // Pick an angle at least 70 degrees away from current position for fair reaction
+    const randomOffset = 70 + Math.floor(Math.random() * 200);
+    const newTargetAngle = (current + directionRef.current * randomOffset + 360) % 360;
+    setCurrentTargetAngle(Math.round(newTargetAngle));
+
+    colorIndexRef.current = (colorIndexRef.current + 1) % TARGET_COLORS.length;
+    setCurrentTargetColor(TARGET_COLORS[colorIndexRef.current]);
+  }, [disabled, currentTargetAngle, currentTargetSize, onInputSubmit, roundData?.roundNumber]);
 
   // Keyboard shortcut listener
   useEffect(() => {
@@ -108,15 +141,13 @@ export function TimingNeedle({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleAction]);
 
-  if (!roundData) return null;
-
   // Arc calculation for SVG Target Slice
   const radius = 80;
   const cx = 110;
   const cy = 110;
-  const targetHalf = roundData.targetSize / 2;
-  const startDeg = (roundData.targetAngle - targetHalf + 360) % 360;
-  const endDeg = (roundData.targetAngle + targetHalf + 360) % 360;
+  const targetHalf = currentTargetSize / 2;
+  const startDeg = (currentTargetAngle - targetHalf + 360) % 360;
+  const endDeg = (currentTargetAngle + targetHalf + 360) % 360;
 
   const toRad = (deg) => (deg - 90) * (Math.PI / 180);
   const x1 = cx + radius * Math.cos(toRad(startDeg));
@@ -124,7 +155,7 @@ export function TimingNeedle({
   const x2 = cx + radius * Math.cos(toRad(endDeg));
   const y2 = cy + radius * Math.sin(toRad(endDeg));
 
-  const largeArcFlag = roundData.targetSize > 180 ? 1 : 0;
+  const largeArcFlag = currentTargetSize > 180 ? 1 : 0;
   const targetArcPath = `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`;
 
   // Needle tip coordinates
@@ -143,6 +174,7 @@ export function TimingNeedle({
       {/* Floating combat feedback */}
       {feedback && (
         <div
+          key={feedback.id}
           className="float-feedback"
           style={{
             top: '-35px',
@@ -181,20 +213,20 @@ export function TimingNeedle({
             strokeWidth="16"
           />
 
-          {/* Target Zone Arc */}
+          {/* Target Zone Arc (Updates immediately!) */}
           <path
             d={targetArcPath}
             fill="none"
-            stroke={roundData.targetColor || '#22c55e'}
+            stroke={currentTargetColor}
             strokeWidth="16"
             strokeLinecap="round"
             style={{
-              filter: `drop-shadow(0 0 10px ${roundData.targetColor || '#22c55e'})`,
-              transition: 'stroke 0.3s ease',
+              filter: `drop-shadow(0 0 10px ${currentTargetColor})`,
+              transition: 'stroke 0.15s ease',
             }}
           />
 
-          {/* Needle Pointer */}
+          {/* Needle Pointer (Flips direction instantly!) */}
           <line
             x1={cx}
             y1={cy}
@@ -224,10 +256,11 @@ export function TimingNeedle({
             fontSize: 12,
             fontWeight: 800,
             letterSpacing: 1.5,
-            color: roundData.clockwise ? '#38bdf8' : '#f43f5e',
+            color: isClockwise ? '#38bdf8' : '#f43f5e',
             textTransform: 'uppercase',
+            transition: 'color 0.1s ease',
           }}>
-            {roundData.clockwise ? 'SEARAH ↻' : 'BERLAWANAN ↺'}
+            {isClockwise ? 'SEARAH ↻' : 'BERLAWANAN ↺'}
           </span>
           {streak > 1 && (
             <span style={{
@@ -245,15 +278,14 @@ export function TimingNeedle({
       {/* Action Button (Touch & Mobile Friendly) */}
       <button
         onClick={handleAction}
-        disabled={disabled || hasActed}
+        disabled={disabled}
         className="btn-primary"
         style={{
           marginTop: 14,
           padding: '12px 36px',
           fontSize: 22,
           letterSpacing: 2,
-          opacity: disabled || hasActed ? 0.6 : 1,
-          transform: disabled || hasActed ? 'scale(0.96)' : 'none',
+          opacity: disabled ? 0.6 : 1,
         }}
       >
         <span>TARIK!</span>

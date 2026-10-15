@@ -140,10 +140,10 @@ export class BotEngine {
   }
 
   handlePlayerInput({ roundNumber, hit, accuracy }) {
-    if (this.isFinished || !this.activeRoundData || this.activeRoundData.roundNumber !== roundNumber) return;
-    if (this.activeRoundData.p1Submitted) return;
+    if (this.isFinished) return;
 
-    this.activeRoundData.p1Submitted = true;
+    if (this.botActionTimeout) clearTimeout(this.botActionTimeout);
+    if (this.roundTimeout) clearTimeout(this.roundTimeout);
 
     if (hit) {
       this.p1Stats.hits++;
@@ -156,10 +156,28 @@ export class BotEngine {
       this.p1Score = Math.max(0, this.p1Score - 1);
     }
 
+    // Bot resolves its counter-reaction immediately
+    let hitProbability = 0.70; // Normal
+    if (this.difficulty === 'easy') hitProbability = 0.42;
+    if (this.difficulty === 'hard') hitProbability = 0.86;
+
+    const botHits = Math.random() < hitProbability;
+    if (botHits) {
+      this.botStats.hits++;
+      this.botStreak++;
+      this.botStats.maxStreak = Math.max(this.botStats.maxStreak, this.botStreak);
+      this.botScore += 1;
+    } else {
+      this.botStats.misses++;
+      this.botStreak = 0;
+      this.botScore = Math.max(0, this.botScore - 1);
+    }
+
     this.updateTilt();
 
-    if (this.activeRoundData.botSubmitted) {
-      this.finalizeRound();
+    // Advance to next round instantly with zero delay!
+    if (!this.isFinished) {
+      this.nextRound();
     }
   }
 

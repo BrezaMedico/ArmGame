@@ -323,11 +323,11 @@ export class GameManager {
     // Broadcast current game state
     this.broadcastGameState(roomData, isP1 ? 'p1' : 'p2', hit);
 
-    // If both submitted, schedule next round quickly
+    // If both submitted, schedule next round immediately
     if (rd.p1Submitted && rd.p2Submitted) {
       if (roomData.roundTimer) clearTimeout(roomData.roundTimer);
       if (!gs.isFinished) {
-        setTimeout(() => this.startNextRound(roomData), 800);
+        setTimeout(() => this.startNextRound(roomData), 50);
       }
     }
   }
@@ -349,7 +349,7 @@ export class GameManager {
     this.broadcastGameState(roomData, null, false);
 
     if (!gs.isFinished) {
-      setTimeout(() => this.startNextRound(roomData), 600);
+      setTimeout(() => this.startNextRound(roomData), 50);
     }
   }
 
