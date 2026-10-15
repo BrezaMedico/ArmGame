@@ -494,7 +494,30 @@ export class GameManager {
 
   handleDisconnect(socket) {
     this.leaveQueue(socket);
-    this.leaveRoom(socket);
+
+    const roomId = this.playerToRoom.get(socket.id);
+    if (!roomId) return;
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      this.playerToRoom.delete(socket.id);
+      return;
+    }
+
+    // In waiting rooms, leave immediately
+    if (room.status === 'waiting') {
+      this.leaveRoom(socket);
+      return;
+    }
+
+    // In active match, allow 4 seconds for transient reconnection before forfeiting
+    if (room.status === 'playing' || room.status === 'countdown') {
+      if (room.disconnectTimer) clearTimeout(room.disconnectTimer);
+      room.disconnectTimer = setTimeout(() => {
+        if (!room.gameState?.isFinished && this.rooms.has(roomId)) {
+          this.leaveRoom(socket);
+        }
+      }, 4000);
+    }
   }
 }
 

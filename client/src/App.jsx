@@ -73,6 +73,18 @@ export default function App() {
     soundManager.setMuted(nextMuted);
   };
 
+  const roleRef = useRef('player1');
+  const playerNameRef = useRef(playerName);
+  const playerIdRef = useRef(playerId);
+
+  useEffect(() => {
+    roleRef.current = role;
+  }, [role]);
+
+  useEffect(() => {
+    playerNameRef.current = playerName;
+  }, [playerName]);
+
   // 1. Initialize 3D SceneManager
   useEffect(() => {
     if (!canvasContainerRef.current) return;
@@ -84,23 +96,21 @@ export default function App() {
     };
   }, []);
 
-  // 2. Initialize Socket.IO connection
+  // 2. Initialize Socket.IO connection (Runs once on mount)
   useEffect(() => {
-    // Connect to server (port 3001 in dev, or window.location in prod)
     const backendUrl = window.location.port === '5173'
       ? `${window.location.protocol}//${window.location.hostname}:3001`
       : window.location.origin;
 
     const s = io(backendUrl, {
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 8,
-      reconnectionDelay: 2000,
+      reconnectionAttempts: 15,
+      reconnectionDelay: 1000,
     });
     socketRef.current = s;
 
     s.on('connect', () => {
       setServerStatus('connected');
-      // Check if URL has ?room=XYZ query param to auto join
       const urlParams = new URLSearchParams(window.location.search);
       const roomParam = urlParams.get('room');
       if (roomParam) {
@@ -108,8 +118,8 @@ export default function App() {
         setCustomRoomCode(roomParam.toUpperCase());
         s.emit('join_custom_room', {
           roomCode: roomParam.toUpperCase(),
-          playerId,
-          playerName,
+          playerId: playerIdRef.current,
+          playerName: playerNameRef.current,
         });
       }
     });
@@ -140,9 +150,10 @@ export default function App() {
     });
 
     // Match Found
-    s.on('match_found', ({ roomId, role, opponent }) => {
+    s.on('match_found', ({ roomId, role: assignedRole, opponent }) => {
       setMatchType('online');
-      setRole(role);
+      roleRef.current = assignedRole;
+      setRole(assignedRole);
       setOpponent(opponent);
       setScreenState('countdown');
       setTilt(0);
@@ -171,10 +182,7 @@ export default function App() {
 
     // State update from server
     s.on('game_state_update', (data) => {
-      // Invert tilt perspective if we are player 2:
-      // data.tilt is relative to p1 (+1 p1 win, -1 p2 win).
-      // So if role === 'player2', tilt is inverted!
-      const isP1 = role === 'player1';
+      const isP1 = roleRef.current === 'player1';
       const myTilt = isP1 ? data.tilt : -data.tilt;
       const myScore = isP1 ? data.p1Score : data.p2Score;
       const theirScore = isP1 ? data.p2Score : data.p1Score;
@@ -191,8 +199,8 @@ export default function App() {
 
     // Match ended
     s.on('match_ended', (data) => {
-      const isWinner = data.winnerRole === role;
-      const stats = role === 'player1' ? data.p1Stats : data.p2Stats;
+      const isWinner = data.winnerRole === roleRef.current;
+      const stats = roleRef.current === 'player1' ? data.p1Stats : data.p2Stats;
 
       setMatchResult({
         isWinner,
@@ -210,13 +218,20 @@ export default function App() {
     });
 
     s.on('opponent_left', ({ message }) => {
-      alert(message);
+      setMatchResult({
+        isWinner: true,
+        winnerName: playerNameRef.current,
+        reason: 'forfeit',
+        stats: { hits: 0, misses: 0, maxStreak: 0 },
+        duration: 0,
+      });
+      setScreenState('result');
     });
 
     return () => {
       s.disconnect();
     };
-  }, [playerId, playerName, role]);
+  }, []);
 
   // Start background ambient on first interaction
   const handleUserActivity = () => {
